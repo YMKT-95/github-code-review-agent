@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+reviews/*
+!reviews/.gitkeep
+*.log
+.DS_Store

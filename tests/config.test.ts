@@ -3,7 +3,7 @@ import { parseConfig } from '../src/config.js';
 
 describe('configuration', () => {
   it('uses documented defaults without credentials in mock mode', () => {
-    expect(parseConfig({})).toEqual({ MAX_AGENT_STEPS: 8, MAX_TOOL_RESULT_CHARS: 30000, MAX_FILES_TO_INSPECT: 20, MIN_FINDING_CONFIDENCE: 0.75, LOG_LEVEL: 'info' });
+    expect(parseConfig({})).toEqual({ MAX_AGENT_STEPS: 8, MAX_TOOL_RESULT_CHARS: 30000, MAX_FILES_TO_INSPECT: 20, MAX_CONTEXT_CHARS: 100000, MAX_PATCH_CHARS: 10000, MCP_TIMEOUT_MS: 15000, MIN_FINDING_CONFIDENCE: 0.75, LOG_LEVEL: 'info' });
   });
   it.each(['0', '0.75', '1'])('accepts confidence %s', (value) => {
     expect(parseConfig({ MIN_FINDING_CONFIDENCE: value }).MIN_FINDING_CONFIDENCE).toBe(Number(value));

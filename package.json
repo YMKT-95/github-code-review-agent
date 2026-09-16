@@ -1,8 +1,8 @@
 {
   "name": "github-code-review-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "A local, read-only GitHub PR review agent — Phase 1 mock foundation",
+  "description": "A local, read-only GitHub PR review agent — Phase 2 MCP context collection",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -15,6 +15,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "dotenv": "^17.4.2",
     "zod": "^4.6.5"
   },

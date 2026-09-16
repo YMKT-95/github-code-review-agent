@@ -18,17 +18,17 @@ describe('offline CLI', () => {
   const options = () => ({ cwd, env: {}, stdout: (value: string) => output.push(value), stderr: (value: string) => errors.push(value) });
 
   it('writes an explicitly labelled report without credentials', async () => {
-    expect(await runCli([url], options())).toBe(0);
+    expect(await runCli(['--mock', url], options())).toBe(0);
     const report = await readFile(join(cwd, 'reviews/owner-repository-pr-42.md'), 'utf8');
     expect(report).toContain('MOCK REPORT');
     expect(report).toContain(url);
     expect(output.join('\n')).toContain('Mock review completed: 0');
   });
   it('refuses to overwrite a previous report', async () => {
-    await runCli([url], options());
+    await runCli(['--mock', url], options());
     const path = join(cwd, 'reviews/owner-repository-pr-42.md');
     await writeFile(path, 'keep this review');
-    expect(await runCli([url], options())).toBe(1);
+    expect(await runCli(['--mock', url], options())).toBe(1);
     expect(await readFile(path, 'utf8')).toBe('keep this review');
     expect(errors.join('\n')).toContain('already exists');
   });
@@ -46,7 +46,7 @@ describe('offline CLI', () => {
   });
   it('lets the existing environment override .env', async () => {
     await writeFile(join(cwd, '.env'), 'MAX_AGENT_STEPS=bad');
-    expect(await runCli([url], { ...options(), env: { MAX_AGENT_STEPS: '4' } })).toBe(0);
+    expect(await runCli(['--mock', url], { ...options(), env: { MAX_AGENT_STEPS: '4' } })).toBe(0);
   });
   it('shows help without configuration or output files', async () => {
     expect(await runCli(['--help'], options())).toBe(0);

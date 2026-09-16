@@ -1,7 +1,7 @@
 import type { PullRequestReference } from '../github/pr-url.js';
 import type { ReviewFinding, ReviewResult } from './schemas.js';
 
-export type PullRequestMetadata = { title: string; base: string; head: string };
+export type PullRequestMetadata = { title: string; base: string; head: string; baseSha?: string; headSha?: string };
 const rank = { high: 0, medium: 1, low: 2 };
 
 // Render untrusted values as plain text, not raw HTML, links, or Markdown headings.
@@ -47,7 +47,7 @@ ${coverage.completionReason === 'mock' ? '\n> MOCK REPORT — No GitHub or LLM c
 - Title: ${metadata ? escapeMarkdown(metadata.title) : 'Not retrieved'}
 - URL: ${pr.url}
 - Base → Head: ${metadata ? `${escapeMarkdown(metadata.base)} → ${escapeMarkdown(metadata.head)}` : 'Not retrieved'}
-- Reviewed at: ${review.reviewedAt}${coverage.completionReason === 'mock' ? ' (mock report generation time)' : ''}
+${metadata?.headSha ? `- Base SHA: ${metadata.baseSha}\n- Head SHA: ${metadata.headSha}\n` : ''}- Reviewed at: ${review.reviewedAt}${coverage.completionReason === 'mock' ? ' (mock report generation time)' : ''}
 
 ## Summary
 

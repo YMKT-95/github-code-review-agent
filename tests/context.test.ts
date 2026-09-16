@@ -9,6 +9,17 @@ import { changedFiles, mockConnection, prMetadata, textResult } from './fixtures
 const pr = parsePullRequestUrl('https://github.com/owner/repository/pull/42');
 const setup = async (connection = mockConnection()) => GitHubReadAdapter.discover(connection, pr, 1000);
 describe('initial context collection', () => {
+  it('retains all 18 filenames when early large patches exhaust a page budget', async () => {
+    const connection = mockConnection();
+    const files = Array.from({ length: 18 }, (_, index) => ({ filename: `src/file-${index}.ts`, patch: 'x'.repeat(20000), status: 'modified' }));
+    connection.callTool.mockImplementation(async (_name, args) => textResult(args.method === 'get'
+      ? { ...prMetadata, changed_files: 18 } : args.method === 'get_files' ? files : { state: 'success' }));
+    const context = await collectInitialContext(await setup(connection), parseConfig({}));
+    expect(context.files).toHaveLength(18);
+    expect(context.files[17]?.filename).toBe('src/file-17.ts');
+    expect(context.files.some((file) => file.patchTruncated)).toBe(true);
+    expect(context.retainedChars).toBeLessThanOrEqual(100000);
+  });
   it('collects metadata, patches and status without claiming a review', async () => {
     const context = await collectInitialContext(await setup(), parseConfig({}));
     expect(context.files).toHaveLength(2);

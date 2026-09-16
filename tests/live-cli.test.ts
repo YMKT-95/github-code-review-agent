@@ -19,7 +19,7 @@ describe('Phase 2 CLI with injected MCP connection', () => {
   const options = () => ({ cwd, env: { GITHUB_TOKEN: 'synthetic-token' }, stdout: (v: string) => output.push(v), stderr: (v: string) => errors.push(v) });
   it('writes a context-only report and always closes the connection', async () => {
     const connection = mockConnection();
-    expect(await runCli([url], { ...options(), connect: async () => connection })).toBe(0);
+    expect(await runCli(['--context-only', url], { ...options(), connect: async () => connection })).toBe(0);
     expect(await readFile(join(cwd, 'reviews/owner-repository-pr-42-context.md'), 'utf8')).toContain('CONTEXT ONLY');
     expect(connection.close).toHaveBeenCalledOnce();
     expect(output.join(' ')).toContain('2/2');
@@ -29,14 +29,14 @@ describe('Phase 2 CLI with injected MCP connection', () => {
   it('validates URL and missing credentials before connecting', async () => {
     const connect = vi.fn();
     expect(await runCli(['bad'], { ...options(), connect })).toBe(1);
-    expect(await runCli([url], { ...options(), env: {}, connect })).toBe(1);
+    expect(await runCli(['--context-only', url], { ...options(), env: {}, connect })).toBe(1);
     expect(connect).not.toHaveBeenCalled();
     expect(await readdir(cwd)).toEqual([]);
   });
   it('closes on inaccessible PR and writes no misleading report', async () => {
     const connection = mockConnection();
     connection.callTool.mockResolvedValue({ isError: true, content: [{ type: 'text', text: 'private-source synthetic-token' }] });
-    expect(await runCli([url], { ...options(), connect: async () => connection })).toBe(1);
+    expect(await runCli(['--context-only', url], { ...options(), connect: async () => connection })).toBe(1);
     expect(connection.close).toHaveBeenCalledOnce();
     expect(errors.join(' ')).toContain('MCP read failed');
     expect(errors.join(' ')).not.toContain('private-source');
@@ -46,7 +46,7 @@ describe('Phase 2 CLI with injected MCP connection', () => {
     await mkdir(join(cwd, 'reviews'));
     await writeFile(join(cwd, 'reviews/owner-repository-pr-42-context.md'), 'preserve');
     const connect = vi.fn();
-    expect(await runCli([url], { ...options(), connect })).toBe(1);
+    expect(await runCli(['--context-only', url], { ...options(), connect })).toBe(1);
     expect(connect).not.toHaveBeenCalled();
   });
   it('keeps the offline mock path independent of GitHub credentials and connections', async () => {

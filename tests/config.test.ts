@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseConfig } from '../src/config.js';
+import { parseConfig, parseLlmConfig } from '../src/config.js';
 
 describe('configuration', () => {
+  it('validates Anthropic settings without exposing keys and caps request limits', () => {
+    expect(() => parseLlmConfig({}, parseConfig({}))).toThrow('LLM_API_KEY');
+    expect(() => parseLlmConfig({ LLM_API_KEY: 'key', LLM_MODEL: 'invalid model' }, parseConfig({}))).toThrow('LLM_MODEL');
+    expect(parseLlmConfig({ LLM_API_KEY: 'key', LLM_MODEL: 'claude-test-model' }, parseConfig({ LLM_TIMEOUT_MS: '999999', MAX_LLM_OUTPUT_TOKENS: '999999' }))).toMatchObject({ timeoutMs: 120000, maxOutputTokens: 16384 });
+  });
   it('uses documented defaults without credentials in mock mode', () => {
-    expect(parseConfig({})).toEqual({ MAX_AGENT_STEPS: 8, MAX_TOOL_RESULT_CHARS: 30000, MAX_FILES_TO_INSPECT: 20, MAX_CONTEXT_CHARS: 100000, MAX_PATCH_CHARS: 10000, MCP_TIMEOUT_MS: 15000, MIN_FINDING_CONFIDENCE: 0.75, LOG_LEVEL: 'info' });
+    expect(parseConfig({})).toEqual({ MAX_AGENT_STEPS: 8, MAX_TOOL_RESULT_CHARS: 30000, MAX_FILES_TO_INSPECT: 20, MAX_CONTEXT_CHARS: 100000, MAX_PATCH_CHARS: 10000, MCP_TIMEOUT_MS: 15000, LLM_TIMEOUT_MS: 60000, MAX_LLM_OUTPUT_TOKENS: 8192, MIN_FINDING_CONFIDENCE: 0.75, LOG_LEVEL: 'info' });
   });
   it.each(['0', '0.75', '1'])('accepts confidence %s', (value) => {
     expect(parseConfig({ MIN_FINDING_CONFIDENCE: value }).MIN_FINDING_CONFIDENCE).toBe(Number(value));

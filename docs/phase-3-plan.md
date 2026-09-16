@@ -1,6 +1,8 @@
 # Phase 3 plan — Anthropic and a bounded review loop
 
-Status: proposed implementation plan, 2026-09-17. No application changes yet.
+Status: implemented and verified offline, 2026-09-17. Live Anthropic smoke testing
+is pending local `LLM_API_KEY` and `LLM_MODEL` configuration. The sections below
+retain the agreed plan and acceptance criteria.
 Branch: `feat/llm-agent-loop`, based on merged Phase 2 (`84161b5`).
 Provider decision: Anthropic, selected by the project owner.
 

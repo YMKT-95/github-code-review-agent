@@ -3,7 +3,7 @@ import type { McpConnection, McpTool } from '../../src/github/mcp-client.js';
 
 export const prMetadata = {
   number: 42, title: 'Handle missing users', body: 'Review this change.', user: { login: 'octocat' },
-  head: { ref: 'fix/users', sha: 'a'.repeat(40) }, base: { ref: 'main', sha: 'b'.repeat(40) },
+  head: { ref: 'fix/users', sha: 'a'.repeat(40), repo: { full_name: 'owner/repository' } }, base: { ref: 'main', sha: 'b'.repeat(40), repo: { full_name: 'owner/repository' } },
   changed_files: 2, additions: 2, deletions: 1,
 };
 export const changedFiles = [

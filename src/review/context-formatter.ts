@@ -41,6 +41,7 @@ ${files.length ? files.map((f) => `- ${escape(f.filename)}: ${escape(f.status ??
 
 ## Limitations
 
+- Context collection only: no model review or test execution was performed.
 ${context.limitations.map((item) => `- ${escape(item)}`).join('\n')}
 - Patches are retained in memory only and are not included in this report. GitHub may omit or shorten patches; server-side patch completeness is not guaranteed.
 `;

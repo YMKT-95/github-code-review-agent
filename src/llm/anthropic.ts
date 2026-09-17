@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import type { MessageCreateParamsNonStreaming } from '@anthropic-ai/sdk/resources/messages';
 import type { LlmConfig } from '../config.js';
-import { READ_TOOL, REVIEW_POLICY } from '../agent/prompts.js';
+import { CONTEXT_TOOLS, REVIEW_POLICY } from '../agent/prompts.js';
 import { candidateSchema } from '../review/validator.js';
 import { ReviewError } from './types.js';
 import type { LlmClient, ModelRequest, ModelTurn } from './types.js';
@@ -25,7 +25,9 @@ export function createAnthropic(config: LlmConfig, fetcher: typeof fetch = fetch
     },
   });
   const format = zodOutputFormat(candidateSchema);
-  const params = (request: ModelRequest): MessageCreateParamsNonStreaming => ({
+  const params = (request: ModelRequest): MessageCreateParamsNonStreaming => {
+    const tools = CONTEXT_TOOLS.filter((tool) => (request.availableTools ?? ['read_changed_file']).some((name) => name === tool.name));
+    return ({
     model: config.model, max_tokens: config.maxOutputTokens, system: REVIEW_POLICY,
     thinking: { type: 'disabled' },
     messages: request.messages.map((message) => {
@@ -35,11 +37,10 @@ export function createAnthropic(config: LlmConfig, fetcher: typeof fetch = fetch
     }),
     // Keep definitions on finalisation calls so prior tool results remain valid;
     // tool_choice:none disables new calls without altering conversation history.
-    tools: [READ_TOOL],
-    tool_choice: request.toolsEnabled ? { type: 'auto', disable_parallel_tool_use: true } : { type: 'none' },
+    ...(tools.length ? { tools, tool_choice: request.toolsEnabled ? { type: 'auto' as const, disable_parallel_tool_use: true } : { type: 'none' as const } } : {}),
     output_config: { format },
     stream: false,
-  });
+  }); };
   return {
     inputChars: (request) => JSON.stringify(params(request)).length,
     async turn(request, signal): Promise<ModelTurn> {

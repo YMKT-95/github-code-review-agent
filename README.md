@@ -3,10 +3,11 @@
 A local TypeScript CLI that reviews one GitHub PR through read-only MCP tools and
 an explicit, bounded Anthropic model loop.
 
-**Status: Phase 3 complete, with offline checks and a live integration run.** The agent can inspect changed
-files, return structured findings, and produce a Markdown report with observed
-coverage. The live run verified GitHub retrieval, Anthropic tool calls and report
-generation; it does not establish review accuracy or complete PR coverage.
+**Status: Phase 4 implemented; new context tools verified offline.** The agent can
+inspect changed and related files, discover callers and tests, return structured
+findings, and report actual coverage. Phase 3's live run verified GitHub retrieval,
+Anthropic tool calls and report generation. Live verification of the new Phase 4
+tools is pending; neither offline checks nor smoke tests establish review accuracy.
 
 ## Install and verify
 
@@ -35,7 +36,8 @@ If you do not already have `.env`, copy `.env.example` to `.env`. Keep an existi
   structured outputs and disabled thinking supported. The application does not
   silently choose a model or fall back to another provider.
 
-Default review mode sends selected PR descriptions, code and patches to Anthropic.
+Default review mode sends selected PR descriptions, patches, related repository
+code/tests and discovery results to Anthropic.
 The GitHub credential stays in the MCP transport and is not included in model input.
 Existing environment variables take precedence over `.env`. Never commit `.env`.
 
@@ -52,17 +54,18 @@ the agent reviews the PR's code, not the rendered page.
 
 ### Review commands
 
-Replace the URL below with an actual pull-request URL. For this project's PR #1:
+Replace the URL below with the PR you intend to review. PR #3 is the historical
+Phase 3 example; new work needs its own actual PR URL:
 
 ```bash
 # Model review: requires GitHub and Anthropic credentials
-npm run review -- https://github.com/YMKT-95/github-code-review-agent/pull/1
+npm run review -- https://github.com/YMKT-95/github-code-review-agent/pull/3
 
 # Context collection only: requires GitHub credentials, makes no model request
-npm run review -- --context-only https://github.com/YMKT-95/github-code-review-agent/pull/1
+npm run review -- --context-only https://github.com/YMKT-95/github-code-review-agent/pull/3
 
 # Offline demonstration: requires no credentials or network access
-npm run review -- --mock https://github.com/YMKT-95/github-code-review-agent/pull/1
+npm run review -- --mock https://github.com/YMKT-95/github-code-review-agent/pull/3
 ```
 
 After building, `node dist/index.js` supports the same arguments. Use `--help` for
@@ -93,9 +96,10 @@ not mean the PR is bug-free or safe to merge.
    Inventory entries take priority over patches within each page so large patches
    no longer hide later filenames. Recheck base/head revisions before model use.
 4. Send a trusted review policy and separately labelled untrusted observations to
-   Claude. The model can return a candidate review or request `read_changed_file`.
+   Claude. The model can return a candidate review or request an available context
+   tool: changed-file read, repository-file read, directory listing or scoped search.
 5. Validate each tool call, perform the allowed read, and return a bounded observation.
-   Repeated requests reuse earlier evidence rather than refetching or repeating code.
+   Identical requests reuse earlier observations. New file ranges use cached content.
 6. Validate final JSON, file references and observed head-line numbers. Allow one
    tools-off repair if final output is invalid.
 7. Filter confidence below the configured threshold, remove exact duplicate findings,
@@ -108,7 +112,7 @@ not mean the PR is bug-free or safe to merge.
 The application owns coverage, timestamps and finding IDs. Model output contains
 only `summary` and `findings`; it cannot assert that an unseen file was inspected.
 
-### Read-only file tool
+### Read-only context tools
 
 `read_changed_file({ path, revision })` accepts only a collected changed-file path
 and `head` or `base`. Repository identities and immutable SHAs come from PR metadata.
@@ -116,16 +120,36 @@ Fork heads use their recorded repository; base reads use the PR target repositor
 Renamed files resolve their old path at base; removed files can only be read at base.
 Unknown head repositories fail rather than falling back to a default branch.
 
-The GitHub adapter maps this tool to `get_file_contents`. It accepts embedded text
-resources or supported JSON file contents and decodes base64 strictly. Directories,
-resource links, binary data and unsupported formats yield limitations. It never
-follows a content URL. Reads are bounded to complete numbered lines for location
-validation. There is no shell execution, code search or arbitrary repository read.
+- `read_repository_file({ path, revision, startLine })` reads a related implementation,
+  caller, contract or test at the selected SHA. `path` is literal at that revision;
+  `startLine` is 1-based. Up to 200 complete lines are supplied, also subject to
+  character limits. `nextStartLine` indicates remaining content; a null value means
+  either the end was reached or no complete line could fit. No code is executed.
+- `list_directory({ path, revision })` returns up to 50 immediate entries at a SHA.
+  Use `path: ""` for root and no trailing slash otherwise. It supports test discovery
+  even when search is unavailable. Listings never count as inspected code.
+- `search_repository({ term, kind })` searches one literal term in the head repository,
+  with `kind: "code"` or `"tests"`. The application adds the repository restriction;
+  model-supplied query qualifiers and operators are rejected. Up to 20 candidate paths
+  are retained from the first search page. Test filtering uses filename conventions
+  and may miss tests with other names.
+
+GitHub code search uses an index/default branch and cannot be pinned to the PR SHA.
+Search results are **discovery hints only**, with snippets and URLs discarded.
+Candidate files must be read at the recorded revision before their code can support
+a finding. Empty searches do not prove code or tests are absent; fork indexing,
+permissions and indexing delays can reduce results.
+
+File and directory reads map to `get_file_contents`; search maps to `search_code`.
+Only capabilities discovered as available are advertised to Claude. File reads
+accept embedded text or supported JSON/base64 contents; directories, links, binary
+data and unsupported formats fail as file reads. No content URL is followed. There
+is no shell execution, repository mutation or model-controlled repository identity.
 
 ### Permissions and untrusted content
 
 MCP requests go only to `https://api.githubcopilot.com/mcp/`, with
-`X-MCP-Readonly: true` and the explicit `pull_request_read,get_file_contents` tools.
+`X-MCP-Readonly: true` and the explicit `pull_request_read,get_file_contents,search_code` tools.
 An application allow-list independently rejects unapproved tools and arguments.
 Provider tool definitions come from our code, not server descriptions. Repository
 instructions cannot change tool permissions. GitHub comments, approvals, commits,
@@ -145,13 +169,19 @@ cannot prove that a finding is substantively correct.
 - `MAX_AGENT_STEPS=8`: normal model turns; at most one tool call each.
 - One extra tools-off finalisation call when a limit is reached before a final result.
 - One tools-off output-repair attempt per run. Thus at most **10 model requests**
-  with defaults, and at most **8 model-requested file-read attempts**.
-- `MAX_FILES_TO_INSPECT=20`: retained changed-file inventory and unique inspected paths.
+  with defaults, and at most **8 model-requested MCP retrieval attempts**, including
+  searches, directory listings and file reads. Cached ranges need no new MCP call.
+- `MAX_FILES_TO_INSPECT=20`: retained changed-file inventory cap and a shared cap on
+  unique inspected paths across changed and related files. Initial patches consume
+  inspection capacity too; related-file reads may stop when it is exhausted.
 - `MAX_TOOL_RESULT_CHARS=30000`: retained metadata/page and tool-observation cap.
 - `MAX_CONTEXT_CHARS=100000`: full serialised Anthropic request body, including policy,
   tool/output schemas and history. Initial patches are reduced to leave room for
   later observations, with 4096 characters reserved for finalisation/repair.
 - `MAX_PATCH_CHARS=10000`: per-patch cap and returned file-observation cap.
+- Up to 200 lines per file observation, 50 directory entries and 20 search paths.
+  Per-run immutable file cache: 2,000,000 characters total, 1,000,000 per file.
+  Repeated failures are not automatically retried.
 - `MCP_TIMEOUT_MS=15000`: request timeout, capped at 120000 ms.
 - `LLM_TIMEOUT_MS=60000`: request timeout, capped at 120000 ms; cancellation is propagated.
 - `MAX_LLM_OUTPUT_TOKENS=8192`: per-response output limit, capped at 16384.
@@ -173,6 +203,10 @@ application retries or SSE reconnection retries.
 - A listed filename is not inspected code. Inspected means nonempty code was supplied
   to the model. Partial patches/reads remain disclosed, and inspection does not prove
   that the model understood every line.
+- Changed-file inspection counts only supplied code from the collected PR inventory.
+  Other supplied paths appear under Additional files inspected; paths outside a
+  truncated inventory cannot reliably be classified as changed versus unchanged.
+  Tests inspected includes supplied test code from either group, never mere matches.
 - A non-null finding line must be an actually observed head-side line. Base-only
   evidence uses `line: null` and the policy requires identifying the base revision.
 - GitHub can omit or shorten patches. Missing context never proves a defect.
@@ -189,10 +223,12 @@ application retries or SSE reconnection retries.
 - `src/cli.ts`, `config.ts`, `logger.ts`: modes, configuration, lifecycle and logs.
 - `src/github/`: URL validation, MCP transport, tool permissions and initial context.
 - `src/llm/types.ts`, `anthropic.ts`: provider-independent contract and Anthropic adapter.
-- `src/agent/prompts.ts`, `state.ts`, `loop.ts`: policy, evidence/budgets and bounded loop.
+- `src/agent/prompts.ts`, `state.ts`, `loop.ts`, `retrieval.ts`: policy, evidence/budgets,
+  bounded loop and scoped context retrieval/cache.
 - `src/review/`: runtime schemas, candidate validation, filtering and Markdown output.
 - `tests/`: deterministic model sequences, mocked MCP/HTTP, and CLI integration tests.
-- `docs/specification.md`, `docs/phase-3-plan.md`: original specification and agreed plan.
+- `docs/specification.md`, `docs/phase-3-plan.md`, `docs/phase-4.md`: specification,
+  prior plan, and contextual review design/validation notes.
 
 ## Verification and next phases
 
@@ -207,11 +243,14 @@ Phase 3's live integration was verified on PR #3 (head `712e7f5`) on 2026-09-18
 report with code from 10 of 29 changed files supplied to the model. One candidate
 was filtered out and the run correctly disclosed partial coverage. A stale summary
 claim exposed by that run was subsequently fixed and verified with offline regression
-tests; the revised summary has not been rerun live. The last full check passed 179
+tests; the revised summary has not been rerun live. The Phase 3 check passed 179
 tests (including the cart demo), typecheck and build. No review-accuracy claim is
 made from these checks or the live smoke test.
 
-Phase 4 adds surrounding implementation/context search and test discovery. Phase 5
+Phase 4 adds surrounding implementation/context search and test discovery. Offline
+tests cover fork/base scoping, search injection, hint-only results, test discovery,
+range evidence, caches, shared budgets and real-SDK CLI protocol mapping. See
+[Phase 4 notes](docs/phase-4.md) for the remaining user-run live smoke test. Phase 5
 refines deduplication and reports beyond current confidence filtering and exact
 record deduplication. Phase 6 adds curated evaluations and measured precision/recall.
 
@@ -221,3 +260,4 @@ record deduplication. Phase 6 adds curated evaluations and measured precision/re
 - [Anthropic tool-call protocol](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
 - [GitHub MCP server](https://github.com/github/github-mcp-server)
 - [GitHub MCP configuration](https://github.com/github/github-mcp-server/blob/main/docs/server-configuration.md)
+- [GitHub code search limitations](https://docs.github.com/en/search-github/github-code-search/about-github-code-search)

@@ -36,13 +36,13 @@ export function boundedFetch(timeoutMs: number, fetcher: typeof fetch = fetch): 
 }
 
 export async function connectGitHub(config: GitHubConfig): Promise<McpConnection> {
-  const client = new Client({ name: 'github-code-review-agent', version: '0.3.0' }, { capabilities: {} });
+  const client = new Client({ name: 'github-code-review-agent', version: '0.4.0' }, { capabilities: {} });
   const transport = new StreamableHTTPClientTransport(new URL(MCP_ENDPOINT), {
     requestInit: { headers: {
       Authorization: `Bearer ${config.token}`,
       'X-MCP-Readonly': 'true',
       'X-MCP-Toolsets': 'pull_requests',
-      'X-MCP-Tools': 'pull_request_read,get_file_contents',
+      'X-MCP-Tools': 'pull_request_read,get_file_contents,search_code',
     } },
     fetch: boundedFetch(config.timeoutMs),
     reconnectionOptions: { maxRetries: 0, maxReconnectionDelay: 1000, initialReconnectionDelay: 1000, reconnectionDelayGrowFactor: 1 },

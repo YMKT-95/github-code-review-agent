@@ -3,7 +3,8 @@ export type Message =
   | { role: 'user'; content: string }
   | { role: 'assistant'; call: ToolCall }
   | { role: 'user'; result: { id: string; content: string; error: boolean } };
-export type ModelRequest = { messages: Message[]; toolsEnabled: boolean };
+export type ModelToolName = 'read_changed_file' | 'read_repository_file' | 'list_directory' | 'search_repository';
+export type ModelRequest = { messages: Message[]; toolsEnabled: boolean; availableTools?: ModelToolName[] };
 export type Usage = { inputTokens: number; outputTokens: number };
 export type ModelTurn = ({ kind: 'tool'; call: ToolCall } | { kind: 'final'; candidate: unknown }) & { usage: Usage };
 export interface LlmClient {

@@ -55,6 +55,23 @@ describe('Anthropic SDK with mocked HTTP', () => {
     const model = createAnthropic(settings, async () => Response.json(message([call], 'tool_use')));
     expect(await model.turn(request, new AbortController().signal)).toMatchObject({ kind: 'tool', call: { id: 'tool_1' } });
   });
+  it('advertises only available context tools and retains definitions during finalisation', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const model = createAnthropic(settings, async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json(message(text(candidate)));
+    });
+    const availableTools = ['read_repository_file', 'list_directory'] as const;
+    for (const toolsEnabled of [true, false]) {
+      const input = { ...request, toolsEnabled, availableTools: [...availableTools] };
+      await model.turn(input, new AbortController().signal);
+      expect(model.inputChars(input)).toBe(JSON.stringify(bodies.at(-1)).length);
+    }
+    expect(bodies[0]?.tools).toMatchObject([{ name: 'read_repository_file', strict: true }, { name: 'list_directory', strict: true }]);
+    expect(bodies[0]?.tools).toEqual(bodies[1]?.tools);
+    expect(bodies[1]?.tool_choice).toEqual({ type: 'none' });
+    expect(JSON.stringify(bodies)).not.toContain('"name":"search_repository"');
+  });
   it('rejects multiple tool calls without returning dispatchable calls', async () => {
     const call = { type: 'tool_use', id: 'tool_1', name: 'read_changed_file', input: {} };
     const model = createAnthropic(settings, async () => Response.json(message([call, { ...call, id: 'tool_2' }], 'tool_use')));

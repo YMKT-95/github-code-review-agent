@@ -3,9 +3,10 @@
 A local TypeScript CLI that reviews one GitHub PR through read-only MCP tools and
 an explicit, bounded Anthropic model loop.
 
-**Status: Phase 3 implemented and tested offline.** The agent can inspect changed
+**Status: Phase 3 complete, with offline checks and a live integration run.** The agent can inspect changed
 files, return structured findings, and produce a Markdown report with observed
-coverage. Live Anthropic verification requires your API key and model configuration.
+coverage. The live run verified GitHub retrieval, Anthropic tool calls and report
+generation; it does not establish review accuracy or complete PR coverage.
 
 ## Install and verify
 
@@ -201,9 +202,14 @@ Coverage includes permission failures, prompt injection, fork/rename/deletion re
 context/turn limits, duplicate requests, invalid evidence, one repair, token redaction,
 provider errors and cleanup. Typecheck covers both source and tests.
 
-Phase 2's live MCP path was verified previously. A live Phase 3 Anthropic smoke test
-remains pending until the local key/model are configured; no review-accuracy claim
-is made from offline tests or a smoke test.
+Phase 3's live integration was verified on PR #3 (head `712e7f5`) on 2026-09-18
+(Pacific/Auckland): five model requests, four additional file reads, and a saved
+report with code from 10 of 29 changed files supplied to the model. One candidate
+was filtered out and the run correctly disclosed partial coverage. A stale summary
+claim exposed by that run was subsequently fixed and verified with offline regression
+tests; the revised summary has not been rerun live. The last full check passed 179
+tests (including the cart demo), typecheck and build. No review-accuracy claim is
+made from these checks or the live smoke test.
 
 Phase 4 adds surrounding implementation/context search and test discovery. Phase 5
 refines deduplication and reports beyond current confidence filtering and exact

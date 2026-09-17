@@ -1,8 +1,13 @@
 # Phase 3 plan — Anthropic and a bounded review loop
 
-Status: implemented and verified offline, 2026-09-17. Live Anthropic smoke testing
-is pending local `LLM_API_KEY` and `LLM_MODEL` configuration. The sections below
-retain the agreed plan and acceptance criteria.
+Status: complete, 2026-09-18 (Pacific/Auckland). Offline checks pass and the owner
+completed a live Anthropic review of PR #3: five model requests, four additional
+file reads, and a saved report with partial coverage (10 of 29 changed files).
+The summary/filtering inconsistency found in that run was fixed and verified by
+offline regression tests. The last full check passed 179 tests (including the cart
+demo), typecheck and build. The summary fix has not been rerun live. These checks
+establish integration behaviour, not review accuracy. The sections below retain
+the agreed plan and acceptance criteria.
 Branch: `feat/llm-agent-loop`, based on merged Phase 2 (`84161b5`).
 Provider decision: Anthropic, selected by the project owner.
 
@@ -259,9 +264,9 @@ Required checks: `npm test`, `npm run typecheck`, `npm run build`. Automated tes
 use no live GitHub or Anthropic access. Live smoke success must be reported separately
 from offline checks and does not establish review accuracy.
 
-## Remaining setup decision
+## Setup decision — resolved
 
-Anthropic is selected. Choose an accessible Claude model ID supporting both tool
-use and structured outputs when preparing the first live run; keep it configurable.
-No API key is needed to review this plan or implement the offline tests. An actual
-key belongs only in local `.env`, never in the plan, fixtures or chat.
+Anthropic was selected and the owner configured local API access and an explicit
+model ID for the successful live run. Keep the model configurable. Credentials
+belong only in local `.env`, never in the plan, fixtures or chat. Offline tests
+require no API key.

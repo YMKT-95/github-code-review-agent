@@ -19,12 +19,25 @@ export function validateCandidate(input: unknown, evidence: ReadonlyMap<string, 
   }
   const seen = new Set<string>();
   const findings: ReviewFinding[] = [];
+  let lowConfidence = 0;
+  let duplicates = 0;
   for (const finding of result.data.findings) {
-    if (finding.confidence < threshold) continue;
+    if (finding.confidence < threshold) { lowConfidence++; continue; }
     const key = JSON.stringify(finding);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) { duplicates++; continue; }
     seen.add(key);
     findings.push({ ...finding, id: `F${findings.length + 1}` });
   }
-  return { ok: true, summary: result.data.summary, findings, rejected: result.data.findings.length - findings.length };
+  const rejected = lowConfidence + duplicates;
+  // Filtering can invalidate any claim in the original free-text summary. Build
+  // its replacement from retained counts instead of trying to edit model prose
+  // or spending another model request that could introduce new contradictions.
+  const summary = rejected === 0 ? result.data.summary : [
+    findings.length === 0 ? 'No reportable findings remain after filtering.'
+      : `${findings.length} reportable ${findings.length === 1 ? 'finding remains' : 'findings remain'} after filtering.`,
+    lowConfidence ? `${lowConfidence} candidate ${lowConfidence === 1 ? 'finding was' : 'findings were'} excluded because confidence was below the configured threshold.` : '',
+    duplicates ? `${duplicates} duplicate ${duplicates === 1 ? 'finding was' : 'findings were'} removed.` : '',
+    'See Findings for retained issues and Review Coverage for scope and limitations.',
+  ].filter(Boolean).join(' ');
+  return { ok: true, summary, findings, rejected };
 }

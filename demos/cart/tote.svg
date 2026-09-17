@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" fill="none">
+  <defs><linearGradient id="canvas" x1="90" y1="110" x2="250" y2="270" gradientUnits="userSpaceOnUse"><stop stop-color="#e3dbc8"/><stop offset=".6" stop-color="#f0eadb"/><stop offset="1" stop-color="#c4b89f"/></linearGradient><linearGradient id="side" x1="238" y1="130" x2="262" y2="270" gradientUnits="userSpaceOnUse"><stop stop-color="#c1b497"/><stop offset="1" stop-color="#a69980"/></linearGradient></defs>
+  <ellipse cx="163" cy="284" rx="103" ry="12" fill="#333d2d" opacity=".09"/>
+  <path d="M118 144V91c0-52 78-52 78 0v53" stroke="#1f4133" stroke-width="13"/>
+  <path d="M137 145V94c0-48 70-48 70 0v51" stroke="#527057" stroke-width="11"/>
+  <path d="m93 127 147-3 18 148-159 7-20-19z" fill="url(#canvas)"/>
+  <path d="m240 124 18 13 14 125-14 10z" fill="url(#side)"/>
+  <path d="m94 136 138-3 18 130-146 7z" stroke="#a79b81" stroke-dasharray="2 3" opacity=".55"/>
+  <path d="m111 128 1 38M199 127l4 37" stroke="#31523e" stroke-width="12"/>
+  <path d="m108 133 7 26m83-28 7 26" stroke="#80907a" stroke-width="1"/>
+  <path d="m124 187 83-2 2 43-82 2z" fill="#294b3b"/>
+  <text x="167" y="207" text-anchor="middle" fill="#f1ebdc" font-family="Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="-.5">fieldwork.</text>
+  <text x="167" y="218" text-anchor="middle" fill="#c4d0b6" font-family="Arial,sans-serif" font-size="4.8" letter-spacing="1.5">CARRY SOMETHING GOOD</text>
+  <path d="m109 242 3 26m117-39 10 33" stroke="#c0b49d" opacity=".6"/>
+</svg>

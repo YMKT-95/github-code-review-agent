@@ -4,6 +4,8 @@ import { parseConfig } from '../src/config.js';
 import { candidate, fakeSource, finalTurn, initialContext, scriptedModel, toolTurn } from './fixtures/agent.js';
 import { finding } from './fixtures/finding.js';
 import { ReviewError } from '../src/llm/types.js';
+import { formatReview } from '../src/review/formatter.js';
+import { parsePullRequestUrl } from '../src/github/pr-url.js';
 
 const config = () => parseConfig({});
 const { id: _id, ...findingWithoutId } = finding;
@@ -85,6 +87,17 @@ describe('bounded agent loop', () => {
     const model = scriptedModel([finalTurn({ ...candidate, findings: [threshold, { ...good, confidence: 0.749 }, threshold] })]);
     const { result } = await runReview(initialContext(), fakeSource(), model, config());
     expect(result.findings).toEqual([{ ...threshold, id: 'F1' }]);
+  });
+  it('renders a consistent report after filtering without another model request', async () => {
+    const model = scriptedModel([finalTurn({ summary: 'One notable correctness issue was found in the truncated-line accounting logic.', findings: [{ ...good, confidence: 0.7 }] })]);
+    const { result, state } = await runReview(initialContext(), fakeSource(), model, config());
+    const report = formatReview(parsePullRequestUrl('https://github.com/owner/repository/pull/3'), result);
+    expect(report).toContain('No reportable findings remain after filtering');
+    expect(report).toContain('No sufficiently supported issues were identified within the reviewed scope.');
+    expect(report).not.toContain('One notable correctness issue');
+    expect(report).not.toContain('truncated');
+    expect(model.turn).toHaveBeenCalledOnce();
+    expect(state.requests).toBe(1);
   });
   it('does not count listed-only files or approve a location in a truncated hunk', async () => {
     const context = initialContext();

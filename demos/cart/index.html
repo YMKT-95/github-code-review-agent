@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fieldwork — Your bag</title>
+  <link rel="icon" href="/tote.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="/" aria-label="Fieldwork home"><span class="brand-mark" aria-hidden="true">↗</span> fieldwork<span class="brand-dot">.</span></a>
+    <span class="header-note">Everyday things. Thoughtfully made.</span>
+    <span class="bag-label">Your bag <span id="bag-count">1</span></span>
+  </header>
+  <main>
+    <div class="breadcrumb">FIELDWORK / YOUR BAG</div>
+    <div class="heading"><h1>A little less.<br>A little better.</h1><p>Good things for your everyday.<br>Starting with what you carry.</p></div>
+    <div class="cart-layout">
+      <section class="cart-items" aria-labelledby="bag-heading">
+        <div class="section-heading"><h2 id="bag-heading">Your bag</h2><span id="item-count">1 item</span></div>
+        <article class="product">
+          <div class="product-image"><span class="product-tag">THE EVERYDAY COLLECTION</span><img src="/tote.svg" alt="Natural canvas tote with forest green handles and a Fieldwork label" width="320" height="320"></div>
+          <div class="product-details"><span class="eyebrow">MADE FOR THE EVERYDAY</span><h3>The Everyday Tote</h3><p>Natural canvas / Forest trim</p><p class="unit-price">$30.00 <span>NZD each</span></p>
+            <div class="quantity-row"><span id="quantity-label">Quantity</span><div class="quantity" role="group" aria-labelledby="quantity-label"><button id="decrease" type="button" aria-label="Decrease quantity">−</button><output id="quantity" aria-live="polite">1</output><button id="increase" type="button" aria-label="Increase quantity">+</button></div></div>
+            <p class="product-footnote">One bag. Plenty of possibilities.</p>
+          </div>
+        </article>
+        <div class="shipping-promise"><span aria-hidden="true">↗</span><div><strong>A little perk for your next outing.</strong><p>Free shipping on orders of $50 or more.</p></div></div>
+      </section>
+      <aside class="summary" aria-labelledby="summary-heading">
+        <div class="summary-top"><span class="eyebrow">THE DETAILS</span><h2 id="summary-heading">Order summary</h2></div>
+        <div class="totals" aria-live="polite" aria-atomic="true"><dl><div><dt>Subtotal</dt><dd id="subtotal">$30.00</dd></div><div><dt>Shipping</dt><dd id="shipping">$5.00</dd></div><div class="total-row"><dt>Total <span>NZD</span></dt><dd id="total">$35.00</dd></div></dl></div>
+        <div class="shipping-progress"><p id="shipping-message">Add $20.00 more for free shipping.</p><progress id="shipping-progress" aria-label="Progress toward free shipping" max="5000" value="3000"></progress><span>Free shipping from $50</span></div>
+        <button class="checkout" type="button" disabled>Checkout <span aria-hidden="true">↗</span></button><p class="checkout-note">Sample store · Checkout unavailable</p>
+      </aside>
+    </div>
+    <footer><span>Buy thoughtfully. Carry daily.</span><span>FIELDWORK · A SAMPLE STOREFRONT</span></footer>
+  </main>
+</body>
+</html>

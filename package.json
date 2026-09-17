@@ -8,6 +8,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "demo:cart": "node demos/cart/server.mjs",
+    "test:cart": "vitest run tests/cart-demo.test.js",
     "review": "tsx src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",

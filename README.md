@@ -40,6 +40,17 @@ Existing environment variables take precedence over `.env`. Never commit `.env`.
 
 ## Commands
 
+### Shopping-cart presentation demo
+
+Run `npm run demo:cart` and open `http://127.0.0.1:4173` for a small storefront that
+makes a shipping bug visible. It needs no API credentials. The page and regression
+tests share the same pricing function; `npm run test:cart` checks the business rule.
+See [the demo guide](demos/cart/README.md) for creating a small PR with a deliberate
+regression, reviewing it, and showing the human-verified fix. The baseline is correct;
+the agent reviews the PR's code, not the rendered page.
+
+### Review commands
+
 Replace the URL below with an actual pull-request URL. For this project's PR #1:
 
 ```bash
@@ -87,7 +98,10 @@ not mean the PR is bug-free or safe to merge.
 6. Validate final JSON, file references and observed head-line numbers. Allow one
    tools-off repair if final output is invalid.
 7. Filter confidence below the configured threshold, remove exact duplicate findings,
-   assign finding IDs, and sort by severity/confidence when formatting.
+   assign finding IDs, and sort by severity/confidence when formatting. If filtering
+   removes any finding, replace the original model summary with retained counts and
+   exclusion reasons so it cannot describe discarded findings. This needs no extra
+   model request; unchanged results preserve their original summary.
 8. Recheck PR revisions, write the report and close the MCP connection.
 
 The application owns coverage, timestamps and finding IDs. Model output contains

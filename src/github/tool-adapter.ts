@@ -4,6 +4,8 @@ import type { PullRequestReference } from './pr-url.js';
 import { GitHubError } from './errors.js';
 import type { InitialContext } from './context.js';
 import { filePath } from '../review/schemas.js';
+import { directoryRequestSchema, repositoryFileRequestSchema, searchRequestSchema, isTestPath } from './context-tools.js';
+import type { DirectoryResult, SearchResult } from './context-tools.js';
 
 export const changedFileRequestSchema = z.strictObject({ path: filePath, revision: z.enum(['head', 'base']) });
 
@@ -32,6 +34,7 @@ export class GitHubReadAdapter {
     private readonly timeoutMs: number,
     private readonly trace: (event: TraceEvent) => void,
     readonly canReadFiles: boolean,
+    readonly canSearchCode: boolean,
   ) {}
 
   static async discover(connection: McpConnection, pr: PullRequestReference, timeoutMs: number, trace: (event: TraceEvent) => void = () => {}): Promise<GitHubReadAdapter> {
@@ -59,7 +62,11 @@ export class GitHubReadAdapter {
     const fileTool = fileTools[0];
     const canReadFiles = fileTools.length === 1 && fileTool?.annotations?.readOnlyHint !== false &&
       ['owner', 'repo', 'path', 'ref'].every((key) => key in (fileTool?.inputSchema.properties ?? {}));
-    return new GitHubReadAdapter(connection, { ...pr }, new Set(method.data.enum), timeoutMs, trace, canReadFiles);
+    const searchTools = tools.filter((item) => item.name === 'search_code');
+    const searchTool = searchTools[0];
+    const canSearchCode = searchTools.length === 1 && searchTool?.annotations?.readOnlyHint !== false &&
+      ['query', 'page', 'perPage'].every((key) => key in (searchTool?.inputSchema.properties ?? {}));
+    return new GitHubReadAdapter(connection, { ...pr }, new Set(method.data.enum), timeoutMs, trace, canReadFiles, canSearchCode);
   }
 
   supports(method: ReadRequest['method']): boolean { return this.methods.has(method); }
@@ -70,14 +77,27 @@ export class GitHubReadAdapter {
     const { path, revision } = request.data;
     const file = context.files.find((item) => item.filename === path);
     if (!file || (revision === 'head' && file.status === 'removed') || (revision === 'base' && file.status === 'added')) throw new GitHubError('permission');
+    const actualPath = revision === 'base' ? file.previous_filename ?? path : path;
+    return this.readRepositoryFile({ path: actualPath, revision, startLine: 1 }, context);
+  }
+
+  private repository(context: InitialContext, revision: 'head' | 'base') {
     const fullName = revision === 'head' ? context.metadata.head.repo?.full_name : `${this.pr.owner}/${this.pr.repository}`;
     if (!fullName) throw new GitHubError('permission');
     const [owner, repo] = fullName.split('/');
-    const actualPath = revision === 'base' ? file.previous_filename ?? path : path;
-    if (!filePath.safeParse(actualPath).success) throw new GitHubError('permission');
+    return { owner: owner!, repo: repo! };
+  }
+
+  // Returns a bounded full file; the agent selects complete numbered lines and
+  // caches this immutable content across range reads. No URLs are followed.
+  async readRepositoryFile(input: unknown, context: InitialContext): Promise<string> {
+    const request = repositoryFileRequestSchema.safeParse(input);
+    if (!this.canReadFiles || !request.success) throw new GitHubError('permission');
+    const { path, revision } = request.data;
+    const { owner, repo } = this.repository(context, revision);
     try {
       const result = await withDeadline(() => this.connection.callTool('get_file_contents', {
-        owner, repo, path: actualPath, ref: context.metadata[revision].sha,
+        owner, repo, path, ref: context.metadata[revision].sha,
       }), this.timeoutMs);
       const envelope = z.object({ isError: z.boolean().optional(), content: z.array(z.unknown()).optional(), structuredContent: z.unknown().optional() }).parse(result);
       if (envelope.isError) throw new GitHubError('tool');
@@ -100,6 +120,53 @@ export class GitHubReadAdapter {
       return text;
     } catch (error) {
       this.trace({ operation: 'get_file_contents', outcome: 'failed' });
+      throw error instanceof GitHubError ? error : new GitHubError('tool');
+    }
+  }
+
+  async listDirectory(input: unknown, context: InitialContext): Promise<DirectoryResult> {
+    const request = directoryRequestSchema.safeParse(input);
+    if (!this.canReadFiles || !request.success) throw new GitHubError('permission');
+    const { path, revision } = request.data;
+    const { owner, repo } = this.repository(context, revision);
+    try {
+      const result = await withDeadline(() => this.connection.callTool('get_file_contents', {
+        owner, repo, path: path ? `${path}/` : '', ref: context.metadata[revision].sha,
+      }), this.timeoutMs);
+      const data = parseJsonResult(result);
+      const entries = z.array(z.object({ path: filePath, type: z.string() })).max(1000).parse(data);
+      const prefix = path ? `${path}/` : '';
+      const children = entries.filter((item) => item.path.startsWith(prefix) && !item.path.slice(prefix.length).includes('/') &&
+        item.path !== path && (item.type === 'file' || item.type === 'dir'));
+      this.trace({ operation: 'get_file_contents:directory', outcome: 'ok' });
+      return { entries: children.slice(0, 50).map((item) => ({ path: item.path, type: item.type as 'file' | 'dir' })),
+        truncated: entries.length >= 1000 || children.length > 50 || children.length !== entries.length };
+    } catch (error) {
+      this.trace({ operation: 'get_file_contents:directory', outcome: 'failed' });
+      throw error instanceof GitHubError ? error : new GitHubError('tool');
+    }
+  }
+
+  async searchRepository(input: unknown, context: InitialContext): Promise<SearchResult> {
+    const request = searchRequestSchema.safeParse(input);
+    if (!this.canSearchCode || !request.success) throw new GitHubError('permission');
+    const { owner, repo } = this.repository(context, 'head');
+    const fullName = `${owner}/${repo}`;
+    const query = `"${request.data.term}" repo:${fullName}`;
+    if (query.length > 256) throw new GitHubError('permission');
+    try {
+      const result = await withDeadline(() => this.connection.callTool('search_code', { query, page: 1, perPage: 20 }), this.timeoutMs);
+      const data = z.object({ total_count: z.number().int().nonnegative(), incomplete_results: z.boolean().optional(),
+        items: z.array(z.object({ path: filePath, repository: z.object({ full_name: z.string() }) })).max(100),
+      }).parse(parseJsonResult(result));
+      // Drop snippets, URLs and all other server-controlled content. Search is
+      // indexed/default-branch discovery, never evidence at the reviewed SHA.
+      const paths = [...new Set(data.items.filter((item) => item.repository.full_name.toLowerCase() === fullName.toLowerCase() &&
+        (request.data.kind === 'code' || isTestPath(item.path))).map((item) => item.path))].slice(0, 20);
+      this.trace({ operation: 'search_code', outcome: 'ok' });
+      return { paths, incomplete: Boolean(data.incomplete_results) || data.total_count > paths.length || data.items.length !== paths.length };
+    } catch (error) {
+      this.trace({ operation: 'search_code', outcome: 'failed' });
       throw error instanceof GitHubError ? error : new GitHubError('tool');
     }
   }
@@ -132,4 +199,12 @@ export class GitHubReadAdapter {
       throw error instanceof GitHubError ? error : new GitHubError('tool');
     }
   }
+}
+
+function parseJsonResult(result: unknown): unknown {
+  const envelope = z.object({ isError: z.boolean().optional(), content: z.unknown().optional(), structuredContent: z.unknown().optional() }).parse(result);
+  if (envelope.isError) throw new GitHubError('tool');
+  if (envelope.structuredContent !== undefined) return envelope.structuredContent;
+  const blocks = z.array(z.object({ type: z.literal('text'), text: z.string().max(2_000_000) })).length(1).parse(envelope.content);
+  return JSON.parse(blocks[0]!.text);
 }

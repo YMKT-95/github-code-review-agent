@@ -86,8 +86,10 @@ Before rerunning review on the same PR, rename the old report to preserve it (fo
 example, append `-before-fix`). The CLI refuses to overwrite reports. The original
 report records its reviewed SHA; a local fix alone does not update the remote PR.
 
-The Phase 3 agent can request only changed files, so unchanged tests and surrounding
-files are not necessarily visible to it. Additional reads and finding the seeded bug
-are not guaranteed. Keep the actual report even if it misses the bug; do not replace
+The Phase 4 agent can discover and read related tests and surrounding files at the
+recorded revisions. These tools depend on MCP capability availability, budgets and
+the model's choices. Search is indexed and not pinned to the PR; only subsequent
+file reads count as evidence. Additional reads and finding the seeded bug are not
+guaranteed. Keep the actual report even if it misses the bug; do not replace
 it with fabricated findings. Rehearse and save a real recording/report as a fallback.
 `--mock` is only a labelled offline example and does not review this cart's code.

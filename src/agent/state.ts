@@ -1,6 +1,7 @@
 import type { InitialContext } from '../github/context.js';
 import type { ReviewCoverage } from '../review/schemas.js';
 import type { Usage } from '../llm/types.js';
+import { isTestPath } from '../github/context-tools.js';
 
 export type Evidence = { headLines: Set<number>; hasCode: boolean };
 export class AgentState {
@@ -22,11 +23,12 @@ export class AgentState {
   }
   coverage(): ReviewCoverage {
     const paths = [...this.evidence.keys()];
+    const changed = new Set(this.context.files.map((file) => file.filename));
     return {
       changedFiles: this.context.metadata.changed_files,
-      changedFilesInspected: paths.length,
-      additionalFilesInspected: [],
-      testsInspected: paths.filter((p) => /(^|\/)(__tests__|tests?|specs?)(\/|$)|[.](test|spec)[.]/i.test(p)),
+      changedFilesInspected: paths.filter((path) => changed.has(path)).length,
+      additionalFilesInspected: paths.filter((path) => !changed.has(path)),
+      testsInspected: paths.filter(isTestPath),
       checksInspected: false,
       completionReason: this.reason === 'sufficient-evidence' && this.limitations.length ? 'partial-diff' : this.reason,
       limitations: [...this.limitations,

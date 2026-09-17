@@ -4,8 +4,8 @@ import { GitHubError } from './errors.js';
 import type { GitHubReadAdapter } from './tool-adapter.js';
 
 const count = z.number().int().nonnegative();
-const branch = z.object({ ref: z.string().max(1024), sha: z.string().regex(/^[a-f0-9]{40,64}$/i) });
-const metadataSchema = z.object({
+const branch = z.object({ ref: z.string().max(1024), sha: z.string().regex(/^[a-f0-9]{40,64}$/i), repo: z.object({ full_name: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/) }).nullish() });
+export const metadataSchema = z.object({
   number: z.number().int().positive(), title: z.string(), body: z.string().nullish(),
   user: z.object({ login: z.string().max(256) }).nullish(), head: branch, base: branch,
   // GitHub's minimal representation omits zero-valued fields.
@@ -25,6 +25,7 @@ export type InitialContext = {
   limitations: string[];
   retainedChars: number;
   collectedAt: string;
+  revisionStable: boolean;
 };
 
 export function sanitiseText(text: string, secrets: readonly string[] = []): string {
@@ -71,30 +72,39 @@ export async function collectInitialContext(adapter: GitHubReadAdapter, config: 
     }
     let pageChars = 0;
     let stop = false;
+    const pending: { index: number; patch: string }[] = [];
+    // Retain the inventory first. Patch allocation cannot crowd out later names.
     for (const item of items) {
       if (files.length >= target) break;
       if (visited.has(item.filename)) { note('Duplicate changed-file results prevented reliable pagination.'); stop = true; break; }
       visited.add(item.filename);
-      const { patch: originalPatch, ...info } = item;
-      const safeInfo = { ...info, filename: clean(info.filename), ...(info.status ? { status: clean(info.status) } : {}),
-        ...(info.previous_filename ? { previous_filename: clean(info.previous_filename) } : {}) };
-      const overhead = JSON.stringify({ ...safeInfo, patch: '', patchTruncated: true }).length;
-      const available = Math.min(config.MAX_CONTEXT_CHARS - retainedChars, config.MAX_TOOL_RESULT_CHARS - pageChars) - overhead;
-      if (available < 0) { note('Context or tool-result character budget exhausted.'); stop = true; break; }
-      const patch = truncateText(clean(originalPatch ?? ''), Math.max(0, Math.min(config.MAX_PATCH_CHARS, available)));
-      const file: CollectedFile = { ...safeInfo, ...(originalPatch !== undefined ? { patch: patch.text } : {}), patchTruncated: patch.truncated };
-      // JSON escaping is included in the retained-context budget.
-      while (JSON.stringify(file).length > Math.min(config.MAX_CONTEXT_CHARS - retainedChars, config.MAX_TOOL_RESULT_CHARS - pageChars) && file.patch) {
-        file.patch = truncateText(file.patch, Math.max(0, Math.floor(file.patch.length / 2))).text;
-        file.patchTruncated = true;
-      }
+      const { patch, ...info } = item;
+      // Keep identifiers unchanged for exact allow-list matching; redact display data later.
+      const file: CollectedFile = { ...info, patchTruncated: Boolean(patch) };
       const size = JSON.stringify(file).length;
-      if (size > available + overhead) { note('Context or tool-result character budget exhausted.'); stop = true; break; }
-      if (!originalPatch) note('Some changed files have no textual patch (for example binary files or server omissions).');
-      if (file.patchTruncated) note('Some patches were truncated by the configured character budgets.');
-      files.push(file);
-      retainedChars += size;
-      pageChars += size;
+      if (retainedChars + size > config.MAX_CONTEXT_CHARS || pageChars + size > config.MAX_TOOL_RESULT_CHARS) {
+        note('Context or tool-result character budget exhausted.'); stop = true; break;
+      }
+      files.push(file); retainedChars += size; pageChars += size;
+      if (patch) pending.push({ index: files.length - 1, patch: clean(patch) });
+      else note('Some changed files have no textual patch (for example binary files or server omissions).');
+    }
+    for (const entry of pending) {
+      const file = files[entry.index]!;
+      const before = JSON.stringify(file).length;
+      // Reserve half the remaining total capacity for future page inventories.
+      const available = Math.min(Math.floor((config.MAX_CONTEXT_CHARS - retainedChars) / 2), config.MAX_TOOL_RESULT_CHARS - pageChars);
+      let bounded = truncateText(entry.patch, config.MAX_PATCH_CHARS);
+      let candidate = { ...file, patch: bounded.text, patchTruncated: bounded.truncated };
+      while (JSON.stringify(candidate).length - before > available && candidate.patch.length) {
+        bounded = truncateText(entry.patch, Math.floor(candidate.patch.length / 2));
+        candidate = { ...file, patch: bounded.text, patchTruncated: true };
+      }
+      const added = JSON.stringify(candidate).length - before;
+      if (added <= available) {
+        files[entry.index] = candidate; retainedChars += added; pageChars += added;
+      }
+      if (files[entry.index]!.patchTruncated) note('Some patches were truncated by the configured character budgets.');
     }
     if (stop || items.length < perPage) break;
   }
@@ -108,13 +118,14 @@ export async function collectInitialContext(adapter: GitHubReadAdapter, config: 
       } else note('Commit status was omitted because the context budget was exhausted.');
     } catch { note('Combined commit status unavailable; continuing with reduced context.'); }
   } else note('The connected MCP server does not advertise combined commit status.');
+  let revisionStable = false;
   // Detect a changing PR rather than presenting mixed revisions as a coherent snapshot.
   try {
     const end = metadataSchema.parse(await adapter.read({ method: 'get' }));
-    if (end.head.sha !== metadata.head.sha || end.base.sha !== metadata.base.sha || end.changed_files !== metadata.changed_files) {
+    revisionStable = end.head.sha === metadata.head.sha && end.base.sha === metadata.base.sha && end.changed_files === metadata.changed_files;
+    if (!revisionStable) {
       note('PR revisions changed during retrieval. Collected context may be inconsistent; rerun before reviewing.');
     }
   } catch { note('PR revision stability could not be verified after retrieval.'); }
-  note('Phase 2 collects context only. No model analysis, code review, test inspection or check-run inspection was performed.');
-  return { metadata, files, status, limitations, retainedChars, collectedAt: new Date().toISOString() };
+  return { metadata, files, status, limitations, retainedChars, revisionStable, collectedAt: new Date().toISOString() };
 }

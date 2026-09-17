@@ -1,8 +1,8 @@
 {
   "name": "github-code-review-agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "A local, read-only GitHub PR review agent — Phase 2 MCP context collection",
+  "description": "A read-only GitHub PR review agent with Anthropic and a bounded tool loop",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -15,6 +15,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
     "@modelcontextprotocol/client": "^2.0.0",
     "dotenv": "^17.4.2",
     "zod": "^4.6.5"

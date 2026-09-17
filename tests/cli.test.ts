@@ -19,14 +19,14 @@ describe('offline CLI', () => {
 
   it('writes an explicitly labelled report without credentials', async () => {
     expect(await runCli(['--mock', url], options())).toBe(0);
-    const report = await readFile(join(cwd, 'reviews/owner-repository-pr-42.md'), 'utf8');
+    const report = await readFile(join(cwd, 'reviews/owner-repository-pr-42-mock.md'), 'utf8');
     expect(report).toContain('MOCK REPORT');
     expect(report).toContain(url);
     expect(output.join('\n')).toContain('Mock review completed: 0');
   });
   it('refuses to overwrite a previous report', async () => {
     await runCli(['--mock', url], options());
-    const path = join(cwd, 'reviews/owner-repository-pr-42.md');
+    const path = join(cwd, 'reviews/owner-repository-pr-42-mock.md');
     await writeFile(path, 'keep this review');
     expect(await runCli(['--mock', url], options())).toBe(1);
     expect(await readFile(path, 'utf8')).toBe('keep this review');

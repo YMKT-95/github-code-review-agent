@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-const text = z.string().trim().min(1);
-const filePath = text.refine(
+const text = z.string().trim().min(1).max(4000);
+export const filePath = text.refine(
   (value) => !value.startsWith('/') && !value.includes('\\') && !value.split('/').some((part) => part === '..' || part === '.' || part === '') && !/[\u0000-\u001f\u007f]/.test(value),
   'Expected a repository-relative file path',
 );
@@ -35,7 +35,7 @@ export const coverageSchema = z.strictObject({
 
 export const reviewResultSchema = z.strictObject({
   summary: text,
-  findings: z.array(findingSchema),
+  findings: z.array(findingSchema).max(30),
   coverage: coverageSchema,
   reviewedAt: z.iso.datetime(),
 });

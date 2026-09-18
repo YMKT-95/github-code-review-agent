@@ -88,7 +88,7 @@ describe('Anthropic SDK with mocked HTTP', () => {
   it('does not retry rate limits or echo raw provider messages', async () => {
     const fetcher = vi.fn<typeof fetch>(async () => Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'synthetic-api-key private source' } }, { status: 429 }));
     const model = createAnthropic(settings, fetcher);
-    await expect(model.turn(request, new AbortController().signal)).rejects.toThrow('Anthropic request failed');
+    await expect(model.turn(request, new AbortController().signal)).rejects.toThrow('Anthropic rate limit reached');
     expect(fetcher).toHaveBeenCalledOnce();
   });
   it('rejects oversized input before contacting the provider', async () => {
@@ -96,5 +96,24 @@ describe('Anthropic SDK with mocked HTTP', () => {
     const model = createAnthropic({ ...settings, maxContextChars: 10 }, fetcher);
     await expect(model.turn(request, new AbortController().signal)).rejects.toThrow('context budget');
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each([
+    [401, 'authentication'], [403, 'access'], [402, 'billing'], [404, 'model'],
+    [429, 'rate-limit'], [400, 'request'], [413, 'request'], [422, 'request'],
+    [500, 'unavailable'], [529, 'unavailable'],
+  ])('classifies HTTP %s safely as %s without retrying', async (status, kind) => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ type: 'error', error: { type: 'api_error', message: 'PRIVATE synthetic-api-key' } }, { status: status as number }));
+    const model = createAnthropic(settings, fetcher);
+    let caught: unknown;
+    try { await model.turn(request, new AbortController().signal); } catch (error) { caught = error; }
+    expect(caught).toMatchObject({ kind });
+    expect(String(caught)).not.toContain('PRIVATE'); expect(String(caught)).not.toContain(settings.apiKey);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it('classifies network errors without leaking connection details', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => { throw new Error('PRIVATE connection details'); });
+    const model = createAnthropic(settings, fetcher);
+    await expect(model.turn(request, new AbortController().signal)).rejects.toMatchObject({ kind: 'network' });
+    expect(fetcher).toHaveBeenCalledOnce();
   });
 });

@@ -7,6 +7,7 @@ import type { LlmClient, Message, ModelTurn, ModelToolName } from '../llm/types.
 import { ReviewError } from '../llm/types.js';
 import { validateCandidate } from '../review/validator.js';
 import { validateReviewResult } from '../review/schemas.js';
+import { compareFindings } from '../review/ordering.js';
 import { AgentState, patchEvidence } from './state.js';
 
 export type AgentEvent = { event: 'turn' | 'tool' | 'final' | 'repair'; step: number; outcome: string };
@@ -118,8 +119,10 @@ export async function runReview(context: InitialContext, source: ReadSource, cli
   }
   if (state.coverage().changedFilesInspected < context.metadata.changed_files) state.note('Not all changed files had code supplied to the model.');
   // Sanitise report prose again: a model can echo a secret from an observation.
-  const findings = validated.findings.map((finding) => ({ ...finding, title: clean(finding.title), description: clean(finding.description), impact: clean(finding.impact), evidence: clean(finding.evidence), suggestion: clean(finding.suggestion) }));
-  const result = validateReviewResult({ summary: clean(validated.summary), findings, coverage: state.coverage(), reviewedAt: new Date().toISOString() }, new Set(state.evidence.keys()));
-  trace({ event: 'final', step: state.steps, outcome: `${findings.length} retained; ${validated.rejected} filtered` });
+  const findings = validated.findings.map((finding) => ({ ...finding, title: clean(finding.title), description: clean(finding.description), impact: clean(finding.impact), evidence: clean(finding.evidence), suggestion: clean(finding.suggestion) }))
+    .sort(compareFindings).map((finding, index) => ({ ...finding, id: `F${index + 1}` }));
+  const result = validateReviewResult({ summary: clean(validated.summary), findings, selection: validated.selection, coverage: state.coverage(), reviewedAt: new Date().toISOString() }, new Set(state.evidence.keys()));
+  const selection = validated.selection;
+  trace({ event: 'final', step: state.steps, outcome: `${selection.candidates} validated; ${selection.retained} retained; ${selection.lowConfidence} below confidence threshold; duplicates removed: ${selection.duplicates}` });
   return { result, state };
 }

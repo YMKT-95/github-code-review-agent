@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,6 +6,7 @@ import { runCli } from '../src/cli.js';
 import { createAnthropic } from '../src/llm/anthropic.js';
 import { mockConnection, prMetadata, changedFiles, textResult, readTool } from './fixtures/mcp.js';
 import { candidate, finalTurn, scriptedModel } from './fixtures/agent.js';
+import { finding } from './fixtures/finding.js';
 
 describe('review CLI', () => {
   let cwd: string;
@@ -103,5 +104,49 @@ describe('review CLI', () => {
       : args.method === 'get_files' ? changedFiles : { state: 'success' }));
     expect(await runCli([url], { ...options(), connect: async () => connection, createLlm: () => scriptedModel([finalTurn()]) })).toBe(0);
     expect(await readFile(join(cwd, 'reviews/owner-repository-pr-42.md'), 'utf8')).toContain('PR revisions changed during model review');
+  });
+  it('reports separate filter counts and concise coverage in the CLI and Markdown', async () => {
+    const { id: _id, ...fields } = finding;
+    const retained = { ...fields, line: 1, confidence: 0.9 };
+    const connection = mockConnection();
+    const model = scriptedModel([finalTurn({ summary: 'Three confirmed problems were found.', findings: [retained, { ...retained, confidence: 0.8 }, { ...retained, confidence: 0.5 }] })]);
+    expect(await runCli([url], { ...options(), connect: async () => connection, createLlm: () => model })).toBe(0);
+    const report = await readFile(join(cwd, 'reviews/owner-repository-pr-42.md'), 'utf8');
+    expect(report).toContain('Validated candidates: 3');
+    expect(report).toContain('Excluded below threshold: 1'); expect(report).toContain('Duplicates removed: 1');
+    expect(report).toContain('Reported findings: 1'); expect(report).toContain('- ID: F1');
+    expect(report).not.toContain('Three confirmed problems');
+    expect(errors.join(' ')).toContain('3 validated; 1 retained; 1 below confidence threshold; duplicates removed: 1');
+    expect(output.join(' ')).toContain('Coverage: 2/2 changed files; 0 additional files; 1 test file supplied (not executed).');
+  });
+  it('identifies authentication failures without source or provider-body leakage', async () => {
+    const connection = mockConnection();
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json({ type: 'error', error: { type: 'authentication_error', message: 'synthetic-llm-key PRIVATE' } }, { status: 401 }));
+    expect(await runCli([url], { ...options(), connect: async () => connection, createLlm: (config) => createAnthropic(config, fetcher) })).toBe(1);
+    expect(errors.join(' ')).toContain('model review (review:authentication)');
+    expect(errors.join(' ')).not.toContain('PRIVATE'); expect(errors.join(' ')).not.toContain('synthetic-llm-key');
+    expect(await readdir(cwd)).toEqual([]); expect(connection.close).toHaveBeenCalledOnce();
+  });
+  it('does not mislabel unexpected model setup failures as directory permission problems', async () => {
+    const connection = mockConnection();
+    expect(await runCli([url], { ...options(), connect: async () => connection, createLlm: () => { throw new Error('PRIVATE setup details'); } })).toBe(1);
+    expect(errors.join(' ')).toContain('model review (unexpected failure)');
+    expect(errors.join(' ')).not.toContain('directory permissions'); expect(errors.join(' ')).not.toContain('PRIVATE');
+    expect(connection.close).toHaveBeenCalledOnce();
+  });
+  it('distinguishes output-path failures from model failures', async () => {
+    await writeFile(join(cwd, 'reviews'), 'a file blocks directory creation');
+    const connect = vi.fn();
+    expect(await runCli(['--mock', url], { ...options(), connect })).toBe(1);
+    expect(errors.join(' ')).toContain('Could not save the report');
+    expect(errors.join(' ')).not.toContain('Anthropic'); expect(connect).not.toHaveBeenCalled();
+  });
+  it('logs each repeated coverage limitation once', async () => {
+    const connection = mockConnection();
+    connection.callTool.mockImplementation(async (_name, args) => textResult(args.method === 'get' ? prMetadata
+      : args.method === 'get_files' ? [{ ...changedFiles[0], patch: '@@ -1 +1 @@\n+' + 'x'.repeat(20000) }, changedFiles[1]] : { state: 'success' }));
+    expect(await runCli([url], { ...options(), connect: async () => connection, createLlm: () => scriptedModel([finalTurn()]) })).toBe(0);
+    expect(errors.filter((line) => line.includes('Some patches were truncated by the configured character budgets.'))).toHaveLength(1);
+    expect(output.join(' ')).toContain('Completion: partial-diff');
   });
 });

@@ -55,8 +55,13 @@ export async function runCli(
   }
 
   const log = createLogger(config.LOG_LEVEL, stderr);
+  const warnings = new Set<string>();
+  const warnOnce = (message: string) => {
+    if (!warnings.has(message)) { warnings.add(message); log('warn', message); }
+  };
   const output = resolve(cwd, 'reviews', `${pr.owner}-${pr.repository}-pr-${pr.pullNumber}${mock ? '-mock' : contextOnly ? '-context' : ''}.md`);
   let connection: McpConnection | undefined;
+  let stage = 'output preparation';
   try {
     try {
       await lstat(output);
@@ -71,20 +76,23 @@ export async function runCli(
       report = formatReview(pr, review);
       summary = 'Mock review completed: 0 reportable findings\nNo GitHub or LLM calls were made.';
     } else {
+      stage = 'GitHub connection';
       log('info', 'Connecting to the official GitHub MCP endpoint with read-only permissions requested.');
       try { connection = await (options.connect ?? connectGitHub)(githubConfig!); }
-      catch { throw new GitHubError('connection'); }
+      catch (error) { throw error instanceof GitHubError ? error : new GitHubError('connection'); }
+      stage = 'GitHub context collection';
       const adapter = await GitHubReadAdapter.discover(connection, pr, githubConfig!.timeoutMs,
         (event) => log(event.outcome === 'ok' ? 'info' : 'warn', `${event.operation}: ${event.outcome}`));
       log('info', `Collecting context for ${pr.owner}/${pr.repository} PR #${pr.pullNumber}. Read-only allow-list active.`);
       const context = await collectInitialContext(adapter, config, secrets);
       for (const limitation of context.limitations) {
-        log('warn', limitation);
+        warnOnce(limitation);
       }
       if (contextOnly) {
         report = formatContextReport(pr, context);
         summary = `Context collection completed: ${context.files.length}/${context.metadata.changed_files} changed-file entries\nNo LLM analysis or code review was performed.`;
       } else {
+        stage = 'model review';
         log('info', 'Sending selected PR context to Anthropic for review.');
         const model = (options.createLlm ?? createAnthropic)(llmConfig!);
         const { result, state } = await runReview(context, adapter, model, config, secrets,
@@ -99,25 +107,36 @@ export async function runCli(
           result.coverage.limitations.push('PR revision stability could not be verified after model review.');
           if (result.coverage.completionReason === 'sufficient-evidence') result.coverage.completionReason = 'tool-failure';
         }
-        for (const limitation of result.coverage.limitations) log('warn', limitation);
+        for (const limitation of result.coverage.limitations) warnOnce(limitation);
         log('info', `Model requests: ${state.requests}; input tokens: ${state.usage.inputTokens}; output tokens: ${state.usage.outputTokens}.`);
+        stage = 'report formatting';
         report = formatReview(pr, result, {
           title: context.metadata.title, base: context.metadata.base.ref, head: context.metadata.head.ref,
           baseSha: context.metadata.base.sha, headSha: context.metadata.head.sha,
         });
-        summary = `Review completed: ${result.findings.length} reportable findings\nCompletion: ${result.coverage.completionReason}`;
+        const tests = result.coverage.testsInspected.length;
+        summary = `Review completed: ${result.findings.length} reportable findings\nCompletion: ${result.coverage.completionReason}\nCoverage: ${result.coverage.changedFilesInspected}/${result.coverage.changedFiles} changed files; ${result.coverage.additionalFilesInspected.length} additional files; ${tests} test ${tests === 1 ? 'file' : 'files'} supplied (not executed).`;
       }
     }
+    stage = 'report directory creation';
     await mkdir(resolve(cwd, 'reviews'), { recursive: true });
+    stage = 'report write';
     // Exclusive creation protects prior reports and refuses to follow existing symlinks.
     await writeFile(output, sanitiseText(report, secrets), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     stdout(`${summary}\nOutput: ${output}`);
     return 0;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    stderr(error instanceof GitHubError || error instanceof ReviewError ? `[ERROR] ${error.message}` : code === 'EEXIST'
-      ? '[ERROR] A report already exists for this PR. Move or remove it before running again.'
-      : '[ERROR] Could not generate or save the report. Check the reviews directory permissions.');
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (error instanceof GitHubError || error instanceof ReviewError) {
+      const source = error instanceof GitHubError ? 'github' : 'review';
+      stderr(`[ERROR] Review stopped during ${stage} (${source}:${error.kind}). ${error.message} No completed report was produced.`);
+    } else if (code === 'EEXIST' && stage === 'report write') {
+      stderr('[ERROR] A report already exists for this PR. Move or remove it before running again.');
+    } else if (stage === 'report write' || stage === 'report directory creation' || stage === 'output preparation') {
+      stderr('[ERROR] Could not save the report. Check the reviews directory permissions and available disk space.');
+    } else {
+      stderr(`[ERROR] Review stopped during ${stage} (unexpected failure). No completed report was produced. Raw error details were withheld.`);
+    }
     return 1;
   } finally {
     if (connection) {

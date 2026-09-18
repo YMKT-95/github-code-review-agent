@@ -64,7 +64,19 @@ export function createAnthropic(config: LlmConfig, fetcher: typeof fetch = fetch
         return { kind: 'final', candidate, usage };
       } catch (error) {
         if (error instanceof ReviewError) throw error;
-        if (signal.aborted) throw new ReviewError('timeout');
+        if (signal.aborted || error instanceof Anthropic.APIConnectionTimeoutError) throw new ReviewError('timeout');
+        if (error instanceof Anthropic.APIConnectionError) throw new ReviewError('network');
+        // Classify only SDK type/status, never echo response bodies or headers.
+        if (error instanceof Anthropic.APIError) {
+          const status = error.status;
+          if (status === 401) throw new ReviewError('authentication');
+          if (status === 403) throw new ReviewError('access');
+          if (status === 402) throw new ReviewError('billing');
+          if (status === 404) throw new ReviewError('model');
+          if (status === 429) throw new ReviewError('rate-limit');
+          if (status === 400 || status === 413 || status === 422) throw new ReviewError('request');
+          if (status && status >= 500) throw new ReviewError('unavailable');
+        }
         throw new ReviewError('provider');
       }
     },

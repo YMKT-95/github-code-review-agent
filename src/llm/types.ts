@@ -13,9 +13,17 @@ export interface LlmClient {
 }
 
 export class ReviewError extends Error {
-  constructor(public readonly kind: 'provider' | 'timeout' | 'protocol' | 'refusal' | 'invalid-output' | 'budget' | 'revision') {
+  constructor(public readonly kind: 'provider' | 'authentication' | 'access' | 'billing' | 'model' | 'rate-limit' | 'request' | 'unavailable' | 'network' | 'timeout' | 'protocol' | 'refusal' | 'invalid-output' | 'budget' | 'revision') {
     super({
       provider: 'Anthropic request failed. Check API access, model availability, quota and network connectivity.',
+      authentication: 'Anthropic authentication failed. Check LLM_API_KEY in your local environment or .env.',
+      access: 'Anthropic denied access. Check the key workspace and model permissions in the Console.',
+      billing: 'Anthropic requires payment. Check your API credit balance in the Console.',
+      model: 'Anthropic could not find the requested resource. Check LLM_MODEL and its availability to your account.',
+      'rate-limit': 'Anthropic rate limit reached. Wait before starting another review or check your Console limits. No automatic retry was made.',
+      request: 'Anthropic rejected the request. Check model support for tools, structured outputs and disabled thinking, request limits, and Console billing status.',
+      unavailable: 'Anthropic is temporarily unavailable. Try again later. No automatic retry was made.',
+      network: 'Could not reach Anthropic. Check network access. No automatic retry was made.',
       timeout: 'Model request timed out. No review was saved.',
       protocol: 'The model returned an unsupported tool-call or response format. No review was saved.',
       refusal: 'The model declined this review. No review was saved.',

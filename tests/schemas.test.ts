@@ -29,4 +29,12 @@ describe('review schemas', () => {
     expect(review.findings).toEqual([]);
     expect(review.coverage.changedFilesInspected).toBe(0);
   });
+  it.each([
+    { candidates: 2, retained: 0, lowConfidence: 0, duplicates: 0, threshold: 0.75 },
+    { candidates: 1, retained: 1, lowConfidence: 0, duplicates: 0, threshold: 0.75 },
+    { candidates: 0, retained: 0, lowConfidence: -1, duplicates: 1, threshold: 0.75 },
+    { candidates: 0, retained: 0, lowConfidence: 0, duplicates: 0, threshold: 2 },
+  ])('rejects inconsistent or invalid finding-selection counts %j', (selection) => {
+    expect(reviewResultSchema.safeParse({ ...createMockReview(), selection }).success).toBe(false);
+  });
 });

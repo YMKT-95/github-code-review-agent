@@ -54,11 +54,75 @@ describe('summary consistency after finding filtering', () => {
     expect(result.summary).toContain('Review Coverage');
   });
 
-  it.each([{ findings: [] }, { findings: [candidateFinding] }])('preserves the model summary when filtering does not change findings', ({ findings }) => {
-    const result = validateCandidate({ summary: 'An unchanged model summary.', findings }, evidence, 0.75);
+  it('preserves the model summary when nonempty findings are unchanged', () => {
+    const result = validateCandidate({ summary: 'An unchanged model summary.', findings: [candidateFinding] }, evidence, 0.75);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.rejected).toBe(0);
     expect(result.summary).toBe('An unchanged model summary.');
+  });
+  it('uses a scope-qualified summary when the model returns no findings but claims a defect', () => {
+    const result = validateCandidate({ summary: 'A serious defect was found.', findings: [] }, evidence, 0.75);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.summary).toContain('No reportable findings were returned');
+    expect(result.summary).not.toContain('serious defect');
+    expect(result.selection).toEqual({ candidates: 0, retained: 0, lowConfidence: 0, duplicates: 0, threshold: 0.75 });
+  });
+  it('deduplicates matching prose/evidence despite different confidence or severity, keeping an original record', () => {
+    const lower = { ...candidateFinding, confidence: 0.8, severity: 'high' as const };
+    const higher = { ...candidateFinding, confidence: 0.95, title: 'Guard   the missing user' };
+    for (const findings of [[lower, higher], [higher, lower]]) {
+      const result = validateCandidate({ summary: originalSummary, findings }, evidence, 0.75);
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.findings).toEqual([{ ...higher, id: 'F1' }]);
+      expect(result.selection).toEqual({ candidates: 2, retained: 1, lowConfidence: 0, duplicates: 1, threshold: 0.75 });
+    }
+  });
+  it.each([
+    { description: 'The same line violates a different contract.' },
+    { evidence: 'Whitespace-sensitive string: "a  b"' },
+    { category: 'security' as const },
+    { line: null },
+    { title: 'A distinct finding on the same line' },
+  ])('preserves distinct findings at the same location: %j', (override) => {
+    const result = validateCandidate({ summary: originalSummary, findings: [candidateFinding, { ...candidateFinding, ...override }] }, evidence, 0.75);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.findings).toHaveLength(2); expect(result.selection.duplicates).toBe(0);
+  });
+  it('preserves evidence whitespace and file identity when detecting duplicates', () => {
+    const observations = new Map([...evidence, ['src/other.ts', { hasCode: true, headLines: new Set([finding.line!]) }]]);
+    const result = validateCandidate({ summary: originalSummary, findings: [
+      { ...candidateFinding, evidence: 'const key = "a b";' },
+      { ...candidateFinding, evidence: 'const key = "a  b";' },
+      { ...candidateFinding, file: 'src/other.ts', evidence: 'const key = "a b";' },
+    ] }, observations, 0.75);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.findings).toHaveLength(3);
+  });
+  it('assigns IDs after severity/confidence ordering with deterministic ties', () => {
+    const findings = [
+      { ...candidateFinding, title: 'Medium', confidence: 1 },
+      { ...candidateFinding, title: 'High B', severity: 'high' as const, confidence: 0.8 },
+      { ...candidateFinding, title: 'High A', severity: 'high' as const, confidence: 0.8 },
+      { ...candidateFinding, title: 'High certain', severity: 'high' as const, confidence: 0.95 },
+    ];
+    const result = validateCandidate({ summary: originalSummary, findings }, evidence, 0.75);
+    const reversed = validateCandidate({ summary: originalSummary, findings: [...findings].reverse() }, evidence, 0.75);
+    expect(result.ok && reversed.ok).toBe(true);
+    if (!result.ok || !reversed.ok) return;
+    expect(result.findings.map(({ id, title }) => [id, title])).toEqual([
+      ['F1', 'High certain'], ['F2', 'High A'], ['F3', 'High B'], ['F4', 'Medium'],
+    ]);
+    expect(result.findings).toEqual(reversed.findings);
+  });
+  it.each([0, 0.75, 1])('retains the exact configured confidence threshold %s', (threshold) => {
+    const result = validateCandidate({ summary: 'Threshold test', findings: [{ ...candidateFinding, confidence: threshold }] }, evidence, threshold);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.findings).toHaveLength(1); expect(result.selection.threshold).toBe(threshold);
   });
 });

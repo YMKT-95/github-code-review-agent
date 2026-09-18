@@ -36,7 +36,7 @@ export function boundedFetch(timeoutMs: number, fetcher: typeof fetch = fetch): 
 }
 
 export async function connectGitHub(config: GitHubConfig): Promise<McpConnection> {
-  const client = new Client({ name: 'github-code-review-agent', version: '0.4.0' }, { capabilities: {} });
+  const client = new Client({ name: 'github-code-review-agent', version: '0.5.0' }, { capabilities: {} });
   const transport = new StreamableHTTPClientTransport(new URL(MCP_ENDPOINT), {
     requestInit: { headers: {
       Authorization: `Bearer ${config.token}`,

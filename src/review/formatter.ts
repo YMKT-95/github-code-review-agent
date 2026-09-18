@@ -1,8 +1,8 @@
 import type { PullRequestReference } from '../github/pr-url.js';
 import type { ReviewFinding, ReviewResult } from './schemas.js';
+import { compareFindings } from './ordering.js';
 
 export type PullRequestMetadata = { title: string; base: string; head: string; baseSha?: string; headSha?: string };
-const rank = { high: 0, medium: 1, low: 2 };
 
 // Render untrusted values as plain text, not raw HTML, links, or Markdown headings.
 export function escapeMarkdown(value: string): string {
@@ -14,10 +14,11 @@ export function escapeMarkdown(value: string): string {
 function formatFinding(finding: ReviewFinding): string {
   return `### ${finding.severity.toUpperCase()} — ${escapeMarkdown(finding.title)}
 
+- ID: ${escapeMarkdown(finding.id)}
 - File: ${escapeMarkdown(finding.file)}
 - Line: ${finding.line ?? 'Not available'}
 - Category: ${finding.category}
-- Confidence: ${Math.round(finding.confidence * 100)}%
+- Confidence: ${Math.round(finding.confidence * 100)}% (model estimate, not a calibrated probability)
 
 **Problem**
 
@@ -38,10 +39,13 @@ ${escapeMarkdown(finding.suggestion)}`;
 
 export function formatReview(pr: PullRequestReference, review: ReviewResult, metadata?: PullRequestMetadata): string {
   const coverage = review.coverage;
-  const findings = [...review.findings].sort((a, b) => rank[a.severity] - rank[b.severity] || b.confidence - a.confidence);
+  const findings = [...review.findings].sort(compareFindings);
+  const selection = review.selection;
+  const limited = coverage.completionReason !== 'mock' && (coverage.completionReason !== 'sufficient-evidence' || coverage.changedFilesInspected < coverage.changedFiles);
   const files = (paths: string[]) => paths.length ? paths.map(escapeMarkdown).join(', ') : 'None';
   return `# Code Review: ${escapeMarkdown(pr.owner)}/${escapeMarkdown(pr.repository)} PR #${pr.pullNumber}
 ${coverage.completionReason === 'mock' ? '\n> MOCK REPORT — No GitHub or LLM calls were made. This is not a code review.\n' : ''}
+${limited ? '> LIMITED COVERAGE — This report covers only the supplied code. See Review Coverage and Limitations before relying on the findings.\n' : ''}
 ## Pull Request
 
 - Title: ${metadata ? escapeMarkdown(metadata.title) : 'Not retrieved'}
@@ -52,6 +56,17 @@ ${metadata?.headSha ? `- Base SHA: ${metadata.baseSha}\n- Head SHA: ${metadata.h
 ## Summary
 
 ${escapeMarkdown(review.summary)}
+${selection ? `
+## Finding Selection
+
+- Validated candidates: ${selection.candidates}
+- Confidence threshold: ${selection.threshold}
+- Excluded below threshold: ${selection.lowConfidence}
+- Duplicates removed: ${selection.duplicates}
+- Reported findings: ${selection.retained}
+
+Confidence is a model estimate, not a measured probability. Counts describe the final validated candidate set after any repair; excluded candidates are not confirmed defects.
+` : ''}
 
 ## Findings
 

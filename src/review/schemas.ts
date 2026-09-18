@@ -33,16 +33,29 @@ export const coverageSchema = z.strictObject({
   path: ['changedFilesInspected'],
 });
 
+const selectionCount = z.number().int().min(0).max(30);
+export const findingSelectionSchema = z.strictObject({
+  candidates: selectionCount, retained: selectionCount,
+  lowConfidence: selectionCount, duplicates: selectionCount,
+  threshold: z.number().min(0).max(1),
+}).refine((value) => value.candidates === value.retained + value.lowConfidence + value.duplicates, {
+  message: 'Finding selection counts must account for every validated candidate',
+});
+
 export const reviewResultSchema = z.strictObject({
   summary: text,
   findings: z.array(findingSchema).max(30),
   coverage: coverageSchema,
   reviewedAt: z.iso.datetime(),
+  selection: findingSelectionSchema.optional(),
+}).refine((value) => !value.selection || value.selection.retained === value.findings.length, {
+  message: 'Retained count must match reported findings', path: ['selection'],
 });
 
 export type ReviewFinding = z.infer<typeof findingSchema>;
 export type ReviewCoverage = z.infer<typeof coverageSchema>;
 export type ReviewResult = z.infer<typeof reviewResultSchema>;
+export type FindingSelection = z.infer<typeof findingSelectionSchema>;
 
 export function validateReviewResult(input: unknown, inspectedFiles: ReadonlySet<string>): ReviewResult {
   const result = reviewResultSchema.parse(input);

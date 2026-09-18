@@ -3,7 +3,7 @@
 A local TypeScript CLI that reviews one GitHub PR through read-only MCP tools and
 an explicit, bounded Anthropic model loop.
 
-**Status: Phase 4 implemented; new context tools verified offline.** The agent can
+**Status: Phase 5 implemented; contextual retrieval and report quality verified offline.** The agent can
 inspect changed and related files, discover callers and tests, return structured
 findings, and report actual coverage. Phase 3's live run verified GitHub retrieval,
 Anthropic tool calls and report generation. Live verification of the new Phase 4
@@ -102,15 +102,39 @@ not mean the PR is bug-free or safe to merge.
    Identical requests reuse earlier observations. New file ranges use cached content.
 6. Validate final JSON, file references and observed head-line numbers. Allow one
    tools-off repair if final output is invalid.
-7. Filter confidence below the configured threshold, remove exact duplicate findings,
-   assign finding IDs, and sort by severity/confidence when formatting. If filtering
+7. Filter confidence below the configured threshold, remove matching duplicate findings,
+   sort by severity/confidence and assign finding IDs in that order. If filtering
    removes any finding, replace the original model summary with retained counts and
    exclusion reasons so it cannot describe discarded findings. This needs no extra
-   model request; unchanged results preserve their original summary.
+   model request. Empty results always use a scope-qualified no-findings summary;
+   unchanged nonempty results preserve their original model summary.
 8. Recheck PR revisions, write the report and close the MCP connection.
 
 The application owns coverage, timestamps and finding IDs. Model output contains
 only `summary` and `findings`; it cannot assert that an unseen file was inspected.
+
+### Report quality and finding selection
+
+Live reports include a **Finding Selection** section with validated candidate count,
+confidence threshold, below-threshold exclusions, duplicates removed and retained
+findings. Counts refer to the final valid response after any output repair, not all
+responses in the conversation. Mock reports omit these statistics.
+
+Duplicate detection is deterministic and conservative: file, line, category, title,
+problem, evidence, impact and suggestion must match, allowing whitespace differences
+in prose. Evidence whitespace and case remain significant. Confidence and severity
+may differ; retain the highest-confidence complete record, then resolve equal-confidence
+ties by severity and deterministic text ordering. Different defects on the same line
+are preserved. General paraphrase/semantic duplicate detection is not implemented.
+
+Findings are sorted by severity, then confidence, with deterministic location/text
+ties. IDs `F1`, `F2`, etc. follow this order (including after secret redaction).
+These IDs identify findings within a report, not persistent identities across runs.
+Confidence is labelled as a model estimate, not a calibrated probability.
+
+Limited reviews carry a prominent coverage notice. No-findings reports distinguish
+an empty candidate set from filtering away proposed findings, and never declare
+the code bug-free. Failed reviews do not generate a no-findings success report.
 
 ### Read-only context tools
 
@@ -163,6 +187,13 @@ from model observations and reports. This is not a general secret scanner.
 Logs contain operational events and token totals, not source, provider error bodies
 or hidden reasoning. Structured validation checks shape and observed locations; it
 cannot prove that a finding is substantively correct.
+Final logs separate below-threshold exclusions from duplicates. The CLI also prints
+changed/additional/test file counts, and repeated coverage warnings appear once.
+Failure messages identify the processing stage and a static reason: provider
+authentication, permissions, payment-required status, model/resource lookup, rate
+limits, rejected requests, network/timeouts or service availability. HTTP 400 alone
+cannot distinguish incompatible settings from insufficient credits; check the
+Console. Raw error bodies remain withheld, and no automatic retries were added.
 
 ## Limits
 
@@ -227,8 +258,8 @@ application retries or SSE reconnection retries.
   bounded loop and scoped context retrieval/cache.
 - `src/review/`: runtime schemas, candidate validation, filtering and Markdown output.
 - `tests/`: deterministic model sequences, mocked MCP/HTTP, and CLI integration tests.
-- `docs/specification.md`, `docs/phase-3-plan.md`, `docs/phase-4.md`: specification,
-  prior plan, and contextual review design/validation notes.
+- `docs/specification.md`, `docs/phase-3-plan.md`, `docs/phase-4.md`, `docs/phase-5.md`:
+  specification and implementation/validation notes.
 
 ## Verification and next phases
 
@@ -251,8 +282,10 @@ Phase 4 adds surrounding implementation/context search and test discovery. Offli
 tests cover fork/base scoping, search injection, hint-only results, test discovery,
 range evidence, caches, shared budgets and real-SDK CLI protocol mapping. See
 [Phase 4 notes](docs/phase-4.md) for the remaining user-run live smoke test. Phase 5
-refines deduplication and reports beyond current confidence filtering and exact
-record deduplication. Phase 6 adds curated evaluations and measured precision/recall.
+adds conservative duplicate matching, stable report ordering/IDs, selection counts,
+scope notices and classified failures. These changes are verified offline; no new
+paid live run was started. See [Phase 5 notes](docs/phase-5.md). Phase 6 adds curated
+evaluations and measured precision/recall.
 
 ## References
 
